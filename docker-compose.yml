@@ -20,6 +20,7 @@ services:
     restart: unless-stopped
     ports:
       - "3001:3001"
+      - "11436:11436"
     environment:
       MONGODB_URI: mongodb://ollamadash:ollamadash123@mongodb:27017/openllm-monitor?authSource=admin
       NODE_ENV: production
@@ -29,6 +30,8 @@ services:
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_CLOUD_URL: https://api.ollama.com
       OLLAMA_CLOUD_API_KEY: ${OLLAMA_CLOUD_API_KEY:-}
+      OLLAMA_PROXY_PORT: "11436"
+      OLLAMA_TARGET_URL: http://host.docker.internal:11434
     depends_on:
       - mongodb
     networks:

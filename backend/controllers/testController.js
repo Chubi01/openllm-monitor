@@ -1,7 +1,10 @@
 const OpenAIService = require("../services/openaiService");
 const OllamaService = require("../services/ollamaService");
+const OllamaCloudService = require("../services/ollamaCloudService");
 const mistralService = require("../services/mistralService");
 const OpenRouterService = require("../services/openrouterService");
+const GeminiService = require("../services/geminiService");
+const GrokService = require("../services/grokService");
 const costEstimator = require("../utils/costEstimator");
 const tokenCounter = require("../utils/tokenCounter");
 const retryHandler = require("../utils/retryHandler");
@@ -13,12 +16,14 @@ const Log = require("../models/Log");
  */
 class TestController {
   constructor() {
-    // Initialize service instances
     this.services = {
       openai: new OpenAIService(),
       ollama: new OllamaService(),
-      mistral: mistralService, // Use the already instantiated service
+      "ollama-cloud": new OllamaCloudService(),
+      mistral: mistralService,
       openrouter: new OpenRouterService(),
+      gemini: new GeminiService(),
+      grok: new GrokService(),
     };
   }
   /**
@@ -58,26 +63,14 @@ class TestController {
         stream,
       };
 
-      let service; // Select appropriate service based on provider
-      switch (provider.toLowerCase()) {
-        case "openai":
-          service = this.services.openai;
-          break;
-        case "ollama":
-          service = this.services.ollama;
-          break;
-        case "mistral":
-          service = this.services.mistral;
-          break;
-        case "openrouter":
-          service = this.services.openrouter;
-          break;
-        default:
-          return res.status(400).json({
-            success: false,
-            error: `Unsupported provider: ${provider}`,
-          });
-      } // Execute the request with retry logic
+      let service;
+      service = this.services[provider.toLowerCase()];
+      if (!service) {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported provider: ${provider}`,
+        });
+      }
       const { result } = await retryHandler.executeWithRetry(
         () => service.sendPrompt(requestParams),
         { maxRetries: 3, baseDelay: 1000 }
@@ -207,21 +200,9 @@ class TestController {
             .toString(36)
             .substr(2, 9)}`;
           let service;
-          switch (provider.toLowerCase()) {
-            case "openai":
-              service = this.services.openai;
-              break;
-            case "ollama":
-              service = this.services.ollama;
-              break;
-            case "mistral":
-              service = this.services.mistral;
-              break;
-            case "openrouter":
-              service = this.services.openrouter;
-              break;
-            default:
-              throw new Error(`Unsupported provider: ${provider}`);
+          service = this.services[provider.toLowerCase()];
+          if (!service) {
+            throw new Error(`Unsupported provider: ${provider}`);
           }
           const { result } = await retryHandler.executeWithRetry(
             () =>
@@ -343,6 +324,10 @@ class TestController {
           "gemma:2b",
           "gemma:7b",
         ],
+        "ollama-cloud": [
+          "kimi-k2.5:latest",
+          "qwen3-coder-next:latest",
+        ],
         mistral: [
           "mistral-tiny",
           "mistral-small",
@@ -356,15 +341,27 @@ class TestController {
           "meta-llama/llama-2-70b-chat",
           "mistralai/mistral-7b-instruct",
         ],
-      }; // Try to get real-time model lists from providers
+        gemini: ["gemini-2.0-flash"],
+        grok: ["grok-1"],
+      };
+
+      // Try to get real-time model lists from providers
       try {
-        // For Ollama, try to get actual running models
         const ollamaModels = await this.services.ollama.listModels?.();
         if (ollamaModels && ollamaModels.length > 0) {
           models.ollama = ollamaModels.map((model) => model.name || model);
         }
       } catch (error) {
         console.warn("Could not fetch Ollama models:", error.message);
+      }
+
+      try {
+        const ollamaCloudModels = await this.services["ollama-cloud"].listModels?.();
+        if (ollamaCloudModels && ollamaCloudModels.length > 0) {
+          models["ollama-cloud"] = ollamaCloudModels.map((model) => model.name || model.id || model);
+        }
+      } catch (error) {
+        console.warn("Could not fetch Ollama Cloud models:", error.message);
       }
 
       res.json({
@@ -448,7 +445,7 @@ class TestController {
       }
 
       // Validate provider
-      const supportedProviders = ["openai", "ollama", "mistral", "openrouter"];
+      const supportedProviders = ["openai", "ollama", "ollama-cloud", "mistral", "openrouter", "gemini", "grok"];
       if (!provider) {
         errors.push("Provider is required");
       } else if (!supportedProviders.includes(provider.toLowerCase())) {

@@ -7,6 +7,7 @@ const replayRoutes = require("./replay");
 const testRoutes = require("./test");
 const providersRoutes = require("./providers");
 const analyticsRoutes = require("./analytics");
+const proxyRoutes = require("./proxy");
 
 // Mount routes
 router.use("/logs", logsRoutes);
@@ -14,6 +15,7 @@ router.use("/replay", replayRoutes);
 router.use("/test", testRoutes);
 router.use("/providers", providersRoutes);
 router.use("/analytics", analyticsRoutes);
+router.use("/proxy", proxyRoutes);
 
 // Health check endpoint
 router.get("/health", (req, res) => {

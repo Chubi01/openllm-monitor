@@ -652,8 +652,11 @@ What could be causing this and how do I fix it?`,
         setAvailableModels({
           openai: ["gpt-4", "gpt-3.5-turbo", "gpt-4-turbo"],
           ollama: ["llama2", "mistral", "phi3:mini"],
+          "ollama-cloud": ["kimi-k2.5:latest", "qwen3-coder-next:latest"],
           mistral: ["mistral-tiny", "mistral-small", "mistral-medium"],
           openrouter: ["openai/gpt-3.5-turbo", "anthropic/claude-3-haiku"],
+          gemini: ["gemini-2.0-flash"],
+          grok: ["grok-1"],
         });
       } finally {
         setLoadingModels(false);
@@ -1439,9 +1442,12 @@ What could be causing this and how do I fix it?`,
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                         >
                           <option value="openai">OpenAI</option>
-                          <option value="ollama">Ollama</option>
+                          <option value="ollama">Ollama Local</option>
+                          <option value="ollama-cloud">Ollama Cloud</option>
                           <option value="mistral">Mistral</option>
                           <option value="openrouter">OpenRouter</option>
+                          <option value="gemini">Gemini</option>
+                          <option value="grok">Grok</option>
                         </select>
                       </div>
 

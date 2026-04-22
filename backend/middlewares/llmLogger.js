@@ -365,12 +365,30 @@ class LLMLogger {
       prompt = requestBody.input;
     }
 
+    // Strip system context tags that come from Claude Code or similar tools
+    prompt = this.stripSystemContext(prompt);
+
     // Truncate if too long
     if (prompt.length > maxLength) {
       prompt = prompt.substring(0, maxLength) + "... [TRUNCATED]";
     }
 
     return prompt;
+  }
+
+  /**
+   * Strip system context tags from prompt content to show only the
+   * actual user message in the dashboard.
+   */
+  stripSystemContext(text) {
+    if (!text || typeof text !== "string") return text || "";
+    // Remove content between <system-reminder> and </system-reminder> tags
+    let cleaned = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
+    // Remove content between <claudeMd> and </claudeMd> tags
+    cleaned = cleaned.replace(/<claudeMd>[\s\S]*?<\/claudeMd>/gi, "");
+    // Remove leading/trailing whitespace and newlines
+    cleaned = cleaned.trim();
+    return cleaned || text;
   }
 
   /**
@@ -381,7 +399,10 @@ class LLMLogger {
    */ extractCompletion(responseData, maxLength) {
     let completion = "";
 
-    if (responseData.choices && Array.isArray(responseData.choices)) {
+    if (responseData.completion) {
+      // Streaming response with collected content
+      completion = responseData.completion;
+    } else if (responseData.choices && Array.isArray(responseData.choices)) {
       // OpenAI/OpenRouter format
       completion =
         responseData.choices[0]?.message?.content ||
@@ -390,8 +411,11 @@ class LLMLogger {
     } else if (responseData.data && responseData.data.completion) {
       // Our new complete endpoint format
       completion = responseData.data.completion;
+    } else if (responseData.message?.content) {
+      // Ollama chat format
+      completion = responseData.message.content;
     } else if (responseData.response) {
-      // Ollama format
+      // Ollama generate format
       completion = responseData.response;
     } else if (responseData.result) {
       // Custom result format

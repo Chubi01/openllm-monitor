@@ -45,13 +45,12 @@ const ProvidersPage = () => {
   const getProviderLogo = (providerId) => {
     const logos = {
       openai: "🤖",
-      anthropic: "🧠",
       mistral: "🌪️",
       ollama: "🦙",
       "ollama-cloud": "☁️",
       openrouter: "🛣️",
-      google: "🔍",
-      cohere: "🌊",
+      gemini: "💎",
+      grok: "⚡",
     };
     return logos[providerId] || "🔧";
   };
@@ -59,15 +58,27 @@ const ProvidersPage = () => {
   const getProviderColor = (providerId) => {
     const colors = {
       openai: "from-green-500 to-teal-600",
-      anthropic: "from-orange-500 to-red-600",
       mistral: "from-purple-500 to-indigo-600",
       ollama: "from-yellow-500 to-orange-600",
       "ollama-cloud": "from-sky-400 to-blue-600",
       openrouter: "from-blue-500 to-cyan-600",
-      google: "from-red-500 to-pink-600",
-      cohere: "from-indigo-500 to-purple-600",
+      gemini: "from-blue-500 to-indigo-600",
+      grok: "from-gray-600 to-gray-800",
     };
     return colors[providerId] || "from-gray-500 to-gray-600";
+  };
+
+  const getProviderLabel = (providerId) => {
+    const labels = {
+      ollama: "Local",
+      "ollama-cloud": "Cloud",
+      openai: "Cloud",
+      mistral: "Cloud",
+      openrouter: "Cloud",
+      gemini: "Cloud",
+      grok: "Cloud",
+    };
+    return labels[providerId] || "";
   };
 
   const getStatusIcon = (status) => {
@@ -260,6 +271,15 @@ const ProvidersPage = () => {
                         {provider.name ||
                           providerId.charAt(0).toUpperCase() +
                             providerId.slice(1)}
+                        {getProviderLabel(providerId) && (
+                          <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            providerId === "ollama"
+                              ? "bg-orange-100 text-orange-700"
+                              : "bg-sky-100 text-sky-700"
+                          }`}>
+                            {getProviderLabel(providerId)}
+                          </span>
+                        )}
                       </h3>
                       <p className="text-sm text-gray-500 truncate max-w-[200px]">
                         {provider.baseUrl || "Default endpoint"}

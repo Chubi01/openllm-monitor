@@ -186,12 +186,14 @@ const ProviderSwitcher = () => {
   };
 
   const getProviderLogo = (provider) => {
-    // In a real app, you'd have actual logos
     const logos = {
       openai: "🤖",
       ollama: "🦙",
+      "ollama-cloud": "☁️",
       openrouter: "🔄",
       mistral: "🌊",
+      gemini: "💎",
+      grok: "⚡",
     };
     return logos[provider] || "🔧";
   };
@@ -481,7 +483,7 @@ const ProviderSwitcher = () => {
                   {selectedProvider === "ollama" && (
                     <span className="text-gray-500">
                       {" "}
-                      (Not required for Ollama)
+                      (Not required for Ollama Local)
                     </span>
                   )}
                 </label>
@@ -498,7 +500,7 @@ const ProviderSwitcher = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   placeholder={
                     selectedProvider === "ollama"
-                      ? "Not required"
+                      ? "Not required for local Ollama"
                       : "Enter your API key"
                   }
                   disabled={selectedProvider === "ollama"}
@@ -511,7 +513,13 @@ const ProviderSwitcher = () => {
                   {selectedProvider === "mistral" &&
                     "Get your API key from https://console.mistral.ai/"}
                   {selectedProvider === "ollama" &&
-                    "Ollama runs locally and does not require an API key"}
+                    "Ollama Local runs on your machine and does not require an API key"}
+                  {selectedProvider === "ollama-cloud" &&
+                    "Get your API key from https://ollama.com"}
+                  {selectedProvider === "gemini" &&
+                    "Get your API key from https://aistudio.google.com/apikey"}
+                  {selectedProvider === "grok" &&
+                    "Get your API key from https://console.x.ai"}
                 </p>
               </div>
 

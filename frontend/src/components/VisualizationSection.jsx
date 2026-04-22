@@ -173,6 +173,26 @@ const VisualizationSection = () => {
       .slice(0, 5); // Top 5 models
   };
 
+  const providerLabels = {
+    ollama: "Ollama Local",
+    "ollama-cloud": "Ollama Cloud",
+    openai: "OpenAI",
+    openrouter: "OpenRouter",
+    mistral: "Mistral",
+    gemini: "Gemini",
+    grok: "Grok",
+  };
+
+  const providerColors = {
+    ollama: "#F59E0B",
+    "ollama-cloud": "#0EA5E9",
+    openai: "#10B981",
+    openrouter: "#8B5CF6",
+    mistral: "#EF4444",
+    gemini: "#3B82F6",
+    grok: "#6B7280",
+  };
+
   const { tokenUsageData, latencyData, retryData } = generateTimeSeriesData();
   const costBreakdownData = generateCostBreakdownData();
   const modelUsageData = generateModelUsageData();
@@ -445,6 +465,77 @@ const VisualizationSection = () => {
           </div>
         </div>
       </div>
+
+      {/* Provider Breakdown */}
+      {(analyticsStats.providerBreakdown || []).length > 0 && (
+        <div className="mt-4 sm:mt-6 bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
+            Provider Breakdown
+          </h3>
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="lg:w-1/2">
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={(analyticsStats.providerBreakdown || []).map((p) => ({
+                      name: providerLabels[p.provider] || p.provider,
+                      value: p.totalRequests,
+                      provider: p.provider,
+                    }))}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                    label={({ name, percent }) =>
+                      `${name} ${(percent * 100).toFixed(0)}%`
+                    }
+                  >
+                    {(analyticsStats.providerBreakdown || []).map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={providerColors[entry.provider] || "#6B7280"}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="lg:w-1/2">
+              <div className="overflow-hidden border border-gray-200 rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Provider</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Requests</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Tokens</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Avg Latency</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {(analyticsStats.providerBreakdown || []).map((p) => (
+                      <tr key={p.provider} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                          <span
+                            className="inline-block w-2.5 h-2.5 rounded-full mr-2"
+                            style={{ backgroundColor: providerColors[p.provider] || "#6B7280" }}
+                          />
+                          {providerLabels[p.provider] || p.provider}
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-600 text-right">{p.totalRequests}</td>
+                        <td className="px-3 py-2 text-sm text-gray-600 text-right">{(p.totalTokens || 0).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-sm text-gray-600 text-right">{p.avgLatency}ms</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Model Usage Stats */}
       <div className="mt-4 sm:mt-6 bg-white border border-gray-200 rounded-lg p-4 sm:p-6">

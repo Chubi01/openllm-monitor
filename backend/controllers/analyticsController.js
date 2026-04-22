@@ -105,6 +105,27 @@ const getStats = async (req, res) => {
       result.totalRequests > 0
         ? (result.requestsWithRetries / result.totalRequests) * 100
         : 0;
+
+    // Provider breakdown aggregation
+    const providerBreakdown = await Log.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      {
+        $group: {
+          _id: "$provider",
+          totalRequests: { $sum: 1 },
+          successfulRequests: {
+            $sum: { $cond: [{ $eq: ["$status", "success"] }, 1, 0] },
+          },
+          totalTokens: { $sum: "$tokenUsage.totalTokens" },
+          promptTokens: { $sum: "$tokenUsage.promptTokens" },
+          completionTokens: { $sum: "$tokenUsage.completionTokens" },
+          avgLatency: { $avg: "$latency" },
+          totalCost: { $sum: "$cost.totalCost" },
+        },
+      },
+      { $sort: { totalRequests: -1 } },
+    ]);
+
     res.json({
       success: true,
       data: {
@@ -136,6 +157,16 @@ const getStats = async (req, res) => {
               : 0,
         },
         providerStats: result.providers,
+        providerBreakdown: providerBreakdown.map((p) => ({
+          provider: p._id,
+          totalRequests: p.totalRequests,
+          successfulRequests: p.successfulRequests,
+          totalTokens: p.totalTokens,
+          promptTokens: p.promptTokens,
+          completionTokens: p.completionTokens,
+          avgLatency: Math.round(p.avgLatency || 0),
+          totalCost: p.totalCost,
+        })),
         modelStats: [],
         timeRangeStats: {
           timeRange,

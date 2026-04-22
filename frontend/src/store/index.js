@@ -76,14 +76,12 @@ export const useAppStore = create(
           notificationSettings: { ...state.notificationSettings, ...settings },
         })),
 
-      setStats: (stats) => set({ stats }), // Fetch stats
+      setStats: (stats) => set({ stats }),
       fetchStats: async () => {
         try {
           set({ loading: true });
           const response = await ApiService.get("/analytics/stats");
 
-          // The API service already extracts response.data, so we get the full response object
-          // Check if the response has the expected structure
           let overview = {};
 
           if (response.success && response.data && response.data.overview) {
@@ -91,48 +89,7 @@ export const useAppStore = create(
           } else if (response.overview) {
             overview = response.overview;
           } else {
-            console.warn("Unexpected API response structure:", response);
-            overview = response; // fallback to treating the whole response as overview
-          }
-
-          // Try to get most active user from logs
-          let mostActiveUser = "N/A";
-          let mostActiveUserPercentage = 0;
-
-          try {
-            const logsResponse = await ApiService.get("/logs?limit=1000"); // Get recent logs
-            if (
-              logsResponse.success &&
-              logsResponse.data &&
-              logsResponse.data.logs
-            ) {
-              const logs = logsResponse.data.logs;
-              const userCounts = {};
-              let totalRequests = logs.length;
-
-              // Count requests per user
-              logs.forEach((log) => {
-                const userId = log.userId || log.user || "Anonymous";
-                userCounts[userId] = (userCounts[userId] || 0) + 1;
-              });
-
-              // Find most active user
-              let maxCount = 0;
-              Object.entries(userCounts).forEach(([userId, count]) => {
-                if (count > maxCount) {
-                  maxCount = count;
-                  mostActiveUser = userId;
-                }
-              });
-
-              if (totalRequests > 0 && maxCount > 0) {
-                mostActiveUserPercentage = Math.round(
-                  (maxCount / totalRequests) * 100
-                );
-              }
-            }
-          } catch (userError) {
-            console.warn("Could not fetch user statistics:", userError);
+            overview = response;
           }
 
           const transformedStats = {
@@ -147,14 +104,12 @@ export const useAppStore = create(
             successRateChange: 0,
             errorRate: overview.errorRate || 0,
             errorRateChange: 0,
-            // Add missing fields for SummaryStatsPanel
             retryRate: overview.retryRate || 0,
             retryRateChange: 0,
             errorCount24h: overview.errorRequests || 0,
             errorCountChange: 0,
-            mostActiveUser,
-            mostActiveUserPercentage,
-            // Add token usage data
+            mostActiveUser: "N/A",
+            mostActiveUserPercentage: 0,
             tokenUsage: {
               total: overview.totalTokens || 0,
               prompt: overview.promptTokens || 0,
@@ -426,11 +381,25 @@ export const useStatsStore = create(
             model: item.model || "Unknown",
           }));
 
+          const providerLabels = {
+            ollama: "Ollama Local",
+            "ollama-cloud": "Ollama Cloud",
+            openai: "OpenAI",
+            openrouter: "OpenRouter",
+            mistral: "Mistral",
+            gemini: "Gemini",
+            grok: "Grok",
+          };
+
           const transformedProviderDistribution = (
-            statsResponse.data?.providerStats || []
-          ).map((provider) => ({
-            name: provider || "Unknown",
-            value: 1,
+            statsResponse.data?.providerBreakdown || []
+          ).map((p) => ({
+            name: providerLabels[p.provider] || p.provider,
+            provider: p.provider,
+            requests: p.totalRequests,
+            tokens: p.totalTokens,
+            avgLatency: p.avgLatency,
+            value: p.totalRequests,
           }));
 
           const transformedStatusDistribution = [
@@ -494,6 +463,7 @@ export const useStatsStore = create(
             },
             overview: overview,
             providerStats: statsResponse.data?.providerStats || [],
+            providerBreakdown: statsResponse.data?.providerBreakdown || [],
             costAnalysis: transformedCostAnalysis,
             recentActivity: [],
             hourlyStats: usageResponse?.data?.hourlyStats || [],

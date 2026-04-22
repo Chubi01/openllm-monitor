@@ -20,6 +20,26 @@ import { useStatsStore } from "../store";
 
 const COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
 
+const PROVIDER_COLORS = {
+  ollama: "#F59E0B",
+  "ollama-cloud": "#0EA5E9",
+  openai: "#10B981",
+  openrouter: "#8B5CF6",
+  mistral: "#EF4444",
+  gemini: "#3B82F6",
+  grok: "#6B7280",
+};
+
+const providerLabels = {
+  ollama: "Ollama Local",
+  "ollama-cloud": "Ollama Cloud",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  mistral: "Mistral",
+  gemini: "Gemini",
+  grok: "Grok",
+};
+
 const DashboardCharts = () => {
   const { stats, loading, fetchStats } = useStatsStore();
   const [timeRange, setTimeRange] = useState("24h");
@@ -156,7 +176,7 @@ const DashboardCharts = () => {
                   {(stats.providerDistribution || []).map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
+                      fill={PROVIDER_COLORS[entry.provider] || COLORS[index % COLORS.length]}
                     />
                   ))}
                 </Pie>
@@ -179,6 +199,37 @@ const DashboardCharts = () => {
               </div>
             )}
           </div>
+          {/* Provider Breakdown Table */}
+          {(stats.providerBreakdown || []).length > 0 && (
+            <div className="mt-4 overflow-hidden border border-gray-200 rounded-lg">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Provider</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Requests</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Tokens</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Avg Latency</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {(stats.providerBreakdown || []).map((p) => (
+                    <tr key={p.provider} className="hover:bg-gray-50">
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                        <span
+                          className="inline-block w-2.5 h-2.5 rounded-full mr-2"
+                          style={{ backgroundColor: PROVIDER_COLORS[p.provider] || "#6B7280" }}
+                        />
+                        {providerLabels[p.provider] || p.provider}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-600 text-right">{p.totalRequests}</td>
+                      <td className="px-4 py-2 text-sm text-gray-600 text-right">{(p.totalTokens || 0).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-sm text-gray-600 text-right">{p.avgLatency}ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         {/* Status Distribution */}
         <div className="bg-white p-6 rounded-lg shadow">

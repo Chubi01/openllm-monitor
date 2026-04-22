@@ -34,6 +34,34 @@ open http://localhost:4180
 | Frontend | 4180 |
 | Backend API | 3001 |
 | MongoDB | 27018 |
+| Ollama Proxy | 11436 |
+
+## Transparent Proxy
+
+The dashboard includes a transparent Ollama proxy on port **11436** that intercepts all LLM requests and logs them automatically. Point your apps to the proxy instead of directly to Ollama:
+
+```bash
+# Instead of: ANTHROPIC_BASE_URL=http://localhost:11434
+# Use:         ANTHROPIC_BASE_URL=http://localhost:11436
+```
+
+### Features
+
+- **Model mapping**: Claude model names auto-map to Ollama equivalents (e.g. `claude-3-5-sonnet` → `glm-5.1:cloud`)
+- **Prompt cleanup**: System context tags (`<system-reminder>`, `<claudeMd>`) are stripped so the dashboard shows the actual user message
+- **Streaming support**: Streaming responses are proxied in real-time and the full completion is captured for logging
+- **Thinking capture**: Models that put responses in `message.thinking` (e.g. glm-5.1) are handled correctly
+
+### claude-ollama alias
+
+```bash
+function claude-ollama {
+  local model="${1:-glm-5.1:cloud}"
+  [ -n "$1" ] && shift
+  ANTHROPIC_BASE_URL="http://localhost:11436" \
+    claude --remote-control --model "$model" --dangerously-skip-permissions "$@"
+}
+```
 
 ## Architecture
 
