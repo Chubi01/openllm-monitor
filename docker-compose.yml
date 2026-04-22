@@ -1,0 +1,58 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: ollama-dash-mongodb
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ollamadash
+      MONGO_INITDB_ROOT_PASSWORD: ollamadash123
+      MONGO_INITDB_DATABASE: openllm-monitor
+    volumes:
+      - ollama_dash_mongodb:/data/db
+    networks:
+      - ollama-dash
+
+  backend:
+    build: ./backend
+    container_name: ollama-dash-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      MONGODB_URI: mongodb://ollamadash:ollamadash123@mongodb:27017/openllm-monitor?authSource=admin
+      NODE_ENV: production
+      PORT: 3001
+      JWT_SECRET: ollama-dash-local-secret-2026
+      FRONTEND_URL: http://localhost:4180
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_CLOUD_URL: https://api.ollama.com
+      OLLAMA_CLOUD_API_KEY: ${OLLAMA_CLOUD_API_KEY:-}
+    depends_on:
+      - mongodb
+    networks:
+      - ollama-dash
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build: ./frontend
+    container_name: ollama-dash-frontend
+    restart: unless-stopped
+    ports:
+      - "4180:80"
+    environment:
+      VITE_API_URL: http://localhost:3001/api
+      VITE_WS_URL: ws://localhost:3001
+    depends_on:
+      - backend
+    networks:
+      - ollama-dash
+
+volumes:
+  ollama_dash_mongodb:
+
+networks:
+  ollama-dash:
+    driver: bridge
