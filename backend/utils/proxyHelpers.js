@@ -87,9 +87,9 @@ function extractCompletion(data) {
 
 const MODEL_MAP = {
   "claude-3-5-sonnet-20241022": "glm-5.1:cloud",
-  "claude-3-5-haiku-20241022": "minimax-m2.7:cloud",
+  "claude-3-5-haiku-20241022": "kimi-k2.5:cloud",
   "claude-3-opus-20240229": "glm-5.1:cloud",
-  "claude-haiku-4-5-20251001": "minimax-m2.7:cloud",
+  "claude-haiku-4-5-20251001": "kimi-k2.5:cloud",
   "claude-sonnet-4-6-20250514": "glm-5.1:cloud",
   "claude-opus-4-7-20250610": "glm-5.1:cloud",
 };
