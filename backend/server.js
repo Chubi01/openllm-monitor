@@ -3,10 +3,23 @@ const config = require("./config/env");
 const database = require("./config/db");
 const express = require("express");
 const axios = require("axios");
-const Log = require("./models/Log");
-const tokenCounter = require("./utils/tokenCounter");
-const costEstimator = require("./utils/costEstimator");
 const { v4: uuidv4 } = require("uuid");
+const {
+  extractContent,
+  stripSystemContext,
+  extractPrompt,
+  extractSystemMessage,
+  extractCompletion,
+  parseStreamLine,
+  collectStreamContent,
+  createStreamCollector,
+  MODEL_MAP,
+  isLoggable,
+  isStreamRequest,
+  translateModel,
+  logOllamaCall,
+  logOllamaError,
+} = require("./utils/proxyHelpers");
 
 const OLLAMA_PROXY_PORT = parseInt(process.env.OLLAMA_PROXY_PORT) || 11434;
 const OLLAMA_TARGET = process.env.OLLAMA_TARGET_URL || "http://host.docker.internal:11434";
@@ -109,32 +122,15 @@ Environment Configuration:
       next();
     });
 
-    // Model mapping: Anthropic/OpenAI model names → Ollama model names
-    const MODEL_MAP = {
-      "claude-3-5-sonnet-20241022": "glm-5.1:cloud",
-      "claude-3-5-haiku-20241022": "glm-4.7-flash:latest",
-      "claude-3-opus-20240229": "glm-5.1:cloud",
-      "claude-haiku-4-5-20251001": "glm-4.7-flash:latest",
-      "claude-sonnet-4-6-20250514": "glm-5.1:cloud",
-      "claude-opus-4-7-20250610": "glm-5.1:cloud",
-    };
-
     // Catch-all: proxy every request to Ollama
     proxyApp.all("*", async (req, res) => {
       const targetUrl = `${OLLAMA_TARGET}${req.originalUrl}`;
-      const isLoggable = req.originalUrl.includes("/api/generate") ||
-        req.originalUrl.includes("/api/chat") ||
-        req.originalUrl.includes("/v1/messages") ||
-        req.originalUrl.includes("/v1/chat/completions");
+      const shouldLog = isLoggable(req.originalUrl);
       const requestId = uuidv4();
       const startTime = Date.now();
 
       // Determine provider based on URL path and model
       const isV1Endpoint = req.originalUrl.includes("/v1/messages") || req.originalUrl.includes("/v1/chat/completions");
-      const isCloudModel = (reqBody) => {
-        const model = reqBody?.model || "";
-        return model.endsWith(":cloud") || model.includes("cloud") || MODEL_MAP[model];
-      };
 
       // Capture body for logging
       let requestBody = {};
@@ -151,8 +147,8 @@ Environment Configuration:
         proxyBody.model = MODEL_MAP[proxyBody.model];
       }
 
-      // For logging: use the translated model name
-      const logBody = { ...requestBody, model: proxyBody.model };
+      // For logging: preserve the original model name alongside the translated one
+      const logBody = { ...requestBody, model: proxyBody.model, originalModel };
 
       // Build proxy headers: use Ollama Cloud API key for cloud models
       const proxyHeaders = {
@@ -164,10 +160,10 @@ Environment Configuration:
         proxyHeaders["Authorization"] = req.get("Authorization");
       }
 
-      const isStreamRequest = proxyBody.stream === true || proxyBody.stream === "true" || proxyBody.stream === 1;
+      const stream = isStreamRequest(proxyBody);
 
       try {
-        if (isStreamRequest && isLoggable) {
+        if (stream && shouldLog) {
           // Streaming: proxy chunks to client in real-time and collect for logging
           const response = await axios({
             method: req.method,
@@ -185,41 +181,14 @@ Environment Configuration:
             res.setHeader("Transfer-Encoding", "chunked");
           }
 
-          let collectedContent = "";
-          let lastChunk = null;
+          const collected = createStreamCollector();
 
           response.data.on("data", (chunk) => {
             res.write(chunk);
-            const lines = chunk.toString().split("\n").filter((l) => l.trim());
+            const lines = chunk.toString().split("\n");
             for (const line of lines) {
-              try {
-                const parsed = JSON.parse(line);
-                // Ollama /api/chat streaming format
-                if (parsed.message?.content) {
-                  collectedContent += parsed.message.content;
-                }
-                // Ollama /api/chat thinking format (glm models put response in thinking)
-                if (parsed.message?.thinking) {
-                  collectedContent += parsed.message.thinking;
-                }
-                // Ollama /api/generate streaming format
-                if (parsed.response) {
-                  collectedContent += parsed.response;
-                }
-                // Anthropic streaming format
-                if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-                  collectedContent += parsed.delta.text;
-                }
-                // OpenAI streaming format
-                if (parsed.choices?.[0]?.delta?.content) {
-                  collectedContent += parsed.choices[0].delta.content;
-                }
-                if (parsed.done) {
-                  lastChunk = parsed;
-                }
-              } catch {
-                // Non-JSON line, skip
-              }
+              const parsed = parseStreamLine(line);
+              if (parsed) collectStreamContent(parsed, collected);
             }
           });
 
@@ -227,9 +196,7 @@ Environment Configuration:
             res.end();
             const latency = Date.now() - startTime;
             const provider = proxyBody.model.endsWith(":cloud") ? "ollama-cloud" : "ollama";
-            const finalData = lastChunk || {};
-            finalData._collectedCompletion = collectedContent;
-            this.logOllamaCall({ requestId, requestBody: logBody, response: { data: finalData, status: 200, headers: response.headers }, latency, provider, isV1Endpoint })
+            logOllamaCall({ requestId, requestBody: logBody, response: { data: collected.doneChunk || {}, status: 200, headers: response.headers }, latency, provider, isV1Endpoint, collected })
               .catch((err) => console.error("Proxy log error:", err.message));
           });
 
@@ -252,10 +219,10 @@ Environment Configuration:
 
           const latency = Date.now() - startTime;
 
-          // Log the request asynchronously - use translated model name for logging
-          if (isLoggable && response.status === 200) {
+          // Log the request asynchronously
+          if (shouldLog && response.status === 200) {
             const provider = proxyBody.model.endsWith(":cloud") ? "ollama-cloud" : "ollama";
-            this.logOllamaCall({ requestId, requestBody: logBody, response, latency, provider, isV1Endpoint })
+            logOllamaCall({ requestId, requestBody: logBody, response, latency, provider, isV1Endpoint, collected: null })
               .catch((err) => console.error("Proxy log error:", err.message));
           }
 
@@ -267,9 +234,9 @@ Environment Configuration:
       } catch (error) {
         const latency = Date.now() - startTime;
 
-        if (isLoggable) {
+        if (shouldLog) {
           const provider = proxyBody.model.endsWith(":cloud") ? "ollama-cloud" : "ollama";
-          this.logOllamaError({ requestId, requestBody: logBody, error, latency, provider })
+          logOllamaError({ requestId, requestBody: logBody, error, latency, provider })
             .catch((err) => console.error("Proxy log error:", err.message));
         }
 
@@ -299,160 +266,6 @@ Environment Configuration:
     });
 
     this.proxyServer = proxyServer;
-  }
-
-  /**
-   * Log a successful Ollama call to the database
-   */
-  async logOllamaCall({ requestId, requestBody, response, latency, provider, isV1Endpoint = false }) {
-    try {
-      let responseData;
-      // Handle streaming response (object with _collectedCompletion) vs buffered (arraybuffer)
-      if (response.data && typeof response.data === "object" && !Buffer.isBuffer(response.data)) {
-        responseData = response.data;
-      } else {
-        try {
-          responseData = JSON.parse(Buffer.from(response.data).toString());
-        } catch (e) {
-          responseData = {};
-        }
-      }
-
-      const prompt = this.extractPrompt(requestBody);
-      // For streaming responses, use collected content; otherwise extract from response
-      const completion = responseData._collectedCompletion || this.extractCompletion(responseData);
-      const systemMessage = this.extractSystemMessage(requestBody);
-      const model = requestBody.model || "unknown";
-
-      // Extract tokens from response (Ollama format or Anthropic/OpenAI format)
-      const promptTokens = responseData.prompt_eval_count ||
-        responseData.usage?.input_tokens ||
-        await tokenCounter.estimateOllamaTokens(prompt + " " + systemMessage);
-      const completionTokens = responseData.eval_count ||
-        responseData.usage?.output_tokens ||
-        await tokenCounter.estimateOllamaTokens(completion);
-
-      // Determine finish reason from various response formats
-      const finishReason = responseData.done_reason ||
-        (responseData.done ? "stop" : null) ||
-        responseData.stop_reason ||
-        (responseData.choices?.[0]?.finish_reason) || null;
-
-      const logEntry = new Log({
-        requestId,
-        provider,
-        model,
-        prompt: prompt.substring(0, 10000),
-        completion: completion.substring(0, 10000),
-        systemMessage: systemMessage.substring(0, 5000),
-        parameters: {
-          temperature: requestBody.options?.temperature ?? requestBody.temperature,
-          maxTokens: requestBody.options?.num_predict ?? requestBody.max_tokens ?? requestBody.maxTokens,
-          topP: requestBody.options?.top_p ?? requestBody.top_p ?? requestBody.topP,
-        },
-        tokenUsage: {
-          promptTokens,
-          completionTokens,
-          totalTokens: promptTokens + completionTokens,
-        },
-        cost: { promptCost: 0, completionCost: 0, totalCost: 0, currency: "USD" },
-        latency,
-        status: "success",
-        isStreaming: !!requestBody.stream,
-        finishReason,
-        createdAt: new Date(),
-      });
-
-      await logEntry.save();
-
-      // Emit via WebSocket for real-time dashboard updates
-      if (this.app.io) {
-        this.app.io.to("logs").emit("new-log", {
-          type: "new-log",
-          data: logEntry.toObject(),
-          timestamp: new Date(),
-        });
-      }
-    } catch (err) {
-      console.error("Failed to log proxied request:", err.message);
-    }
-  }
-
-  /**
-   * Log a failed Ollama call
-   */
-  async logOllamaError({ requestId, requestBody, error, latency, provider }) {
-    try {
-      const logEntry = new Log({
-        requestId,
-        provider,
-        model: requestBody.model || "unknown",
-        prompt: this.extractPrompt(requestBody).substring(0, 10000),
-        completion: "",
-        systemMessage: this.extractSystemMessage(requestBody).substring(0, 5000),
-        parameters: {},
-        tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
-        cost: { promptCost: 0, completionCost: 0, totalCost: 0, currency: "USD" },
-        latency,
-        status: "error",
-        error: {
-          message: error.message,
-          code: error.code || error.response?.status?.toString() || "PROXY_ERROR",
-        },
-        createdAt: new Date(),
-      });
-
-      await logEntry.save();
-
-      if (this.app.io) {
-        this.app.io.to("logs").emit("new-log", {
-          type: "new-log",
-          data: logEntry.toObject(),
-          timestamp: new Date(),
-        });
-      }
-    } catch (err) {
-      console.error("Failed to log proxied error:", err.message);
-    }
-  }
-
-  extractPrompt(body) {
-    let prompt = "";
-    if (body.messages && Array.isArray(body.messages)) {
-      const userMsg = body.messages.find((m) => m.role === "user");
-      prompt = extractContent(userMsg?.content);
-    } else {
-      prompt = extractContent(body.prompt);
-    }
-    return stripSystemContext(prompt);
-  }
-
-  extractSystemMessage(body) {
-    if (body.messages && Array.isArray(body.messages)) {
-      const sysMsg = body.messages.find((m) => m.role === "system");
-      return extractContent(sysMsg?.content);
-    }
-    return extractContent(body.system);
-  }
-
-  extractCompletion(data) {
-    if (!data) return "";
-    if (data.message?.content) return extractContent(data.message.content);
-    // glm models put response in message.thinking
-    if (data.message?.thinking && !data.message?.content) return extractContent(data.message.thinking);
-    if (data.response) return data.response;
-    // Anthropic Messages API format
-    if (data.content && Array.isArray(data.content)) {
-      const textBlocks = data.content.filter(b => b.type === "text");
-      if (textBlocks.length > 0) return textBlocks.map(b => b.text).join("\n");
-      // If only thinking blocks (response cut short), extract thinking content
-      const thinkingBlocks = data.content.filter(b => b.type === "thinking");
-      if (thinkingBlocks.length > 0) return thinkingBlocks.map(b => b.thinking || b.text || "").join("\n");
-    }
-    // OpenAI Chat Completions format
-    if (data.choices?.[0]?.message?.content) return extractContent(data.choices[0].message.content);
-    if (data.choices?.[0]?.text) return data.choices[0].text;
-    return "";
   }
 
   async displayProviderStatus() {
@@ -546,36 +359,6 @@ if (require.main === module) {
     console.error("Failed to start server:", error);
     process.exit(1);
   });
-}
-
-/**
- * Extract text from Anthropic content blocks (string or array of {type, text} objects)
- */
-function extractContent(content) {
-  if (!content) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text || "")
-      .join("\n");
-  }
-  return String(content);
-}
-
-/**
- * Strip system context tags from prompt content to show only the
- * actual user message in the dashboard.
- */
-function stripSystemContext(text) {
-  if (!text || typeof text !== "string") return text || "";
-  // Remove content between <system-reminder> and </system-reminder> tags
-  let cleaned = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
-  // Remove content between <claudeMd> and </claudeMd> tags
-  cleaned = cleaned.replace(/<claudeMd>[\s\S]*?<\/claudeMd>/gi, "");
-  // Remove leading/trailing whitespace and newlines
-  cleaned = cleaned.trim();
-  return cleaned || text;
 }
 
 module.exports = Server;

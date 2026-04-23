@@ -12,6 +12,7 @@ const config = require("./config/env");
 const database = require("./config/db");
 const apiRoutes = require("./routes");
 const llmLogger = require("./middlewares/llmLogger");
+const wsEmitter = require("./utils/wsEmitter");
 
 /**
  * OpenLLM Monitor Express Application
@@ -185,8 +186,9 @@ class App {
       });
     });
 
-    // Pass WebSocket instance to LLM Logger for real-time updates
+    // Pass WebSocket instance to LLM Logger and wsEmitter for real-time updates
     llmLogger.setWebSocketInstance(this.io);
+    wsEmitter.setIO(this.io);
 
     // Broadcast new logs to connected clients
     this.setupLogBroadcasting();
